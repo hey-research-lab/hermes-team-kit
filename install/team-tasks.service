@@ -1,0 +1,15 @@
+[Unit]
+Description=Hermes team task and budget dispatch
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@ROOT@
+Environment=TEAM_CONFIG=@ROOT@/config.toml
+EnvironmentFile=@ROOT@/service.env
+ExecStart=/usr/bin/python3 @ROOT@/take-tasks/take-tasks.py
+ExecStart=/usr/bin/python3 @ROOT@/install/dispatch.py
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes

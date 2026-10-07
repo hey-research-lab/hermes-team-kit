@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.bak*
+.env
+bot.env
+config.toml
+var/
+.pytest_cache/
+service.env

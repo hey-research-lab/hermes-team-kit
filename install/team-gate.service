@@ -1,0 +1,26 @@
+[Unit]
+Description=Hermes team Telegram gate
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@ROOT@
+Environment=TEAM_CONFIG=@ROOT@/config.toml
+EnvironmentFile=@ROOT@/service.env
+ExecStart=/usr/bin/python3 @ROOT@/gate/gate.py
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@ROOT@/var
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

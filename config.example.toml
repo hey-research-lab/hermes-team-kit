@@ -1,0 +1,66 @@
+# Copy to config.toml; paths are relative to this file. Python 3.11+.
+[telegram]
+owner_ids = [900000001]
+guest_ids = [200000002]
+token_env = "TELEGRAM_BOT_TOKEN"
+locale = "en"
+deny_words = []
+
+[paths]
+gate = "var/gate"
+out = "var/out"
+work = "var/work/tasks"
+keys = "var/keys"
+ledger = "var/ledger.jsonl"
+
+[hermes]
+command = "hermes"
+board = "default"
+
+[limits]
+proposals_per_day = 100
+tasks_per_day = 100
+guest_refs_per_day = 5
+guest_deep_per_day = 3
+breaker_threshold = 0.8
+reset_hour_utc = 0
+
+[provider]
+base_url = "https://YOUR_PROVIDER/v1"
+api_key_env = "MODEL_API_KEY"
+model = "YOUR_MODEL"
+# Generic optional GET adapter: JSON {"daily_cap_usd": 10, "spent_usd": 2,
+# "reset_at": "2026-10-08T00:00:00Z"}. Empty URL uses the local ledger.
+usage_url = ""
+
+[fallback]
+base_url = ""
+api_key_env = "FALLBACK_API_KEY"
+model = ""
+
+# An uncapped key needs no seats. A capped key can serve any group of profiles.
+[seats.A]
+profiles = ["scoutx", "scoutweb"]
+api_key_env = "MODEL_API_KEY"
+daily_cap_usd = 10.0
+[seats.B]
+profiles = ["judge", "analyst"]
+api_key_env = "MODEL_API_KEY_B"
+daily_cap_usd = 10.0
+[seats.C]
+profiles = ["research1", "research2", "research3"]
+api_key_env = "MODEL_API_KEY_C"
+daily_cap_usd = 10.0
+[seats.D]
+profiles = ["builder", "tester"]
+api_key_env = "MODEL_API_KEY_D"
+daily_cap_usd = 10.0
+[seats.E]
+profiles = ["writer"]
+api_key_env = "MODEL_API_KEY_E"
+daily_cap_usd = 10.0
+
+[security]
+# Single-user mode trusts the agent account with gate state and credentials.
+# Set false only with separate OS users and the permissions in docs/THREAT-MODEL.md.
+trusted_same_user = true

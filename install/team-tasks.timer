@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll team tasks and budgets every minute
+
+[Timer]
+OnBootSec=30
+OnUnitInactiveSec=60
+Unit=team-tasks.service
+
+[Install]
+WantedBy=timers.target
