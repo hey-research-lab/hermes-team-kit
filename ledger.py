@@ -25,13 +25,18 @@ def events(path):
 def append(path, event):
     record = dict(event)
     record.setdefault('ts', time.time())
-    if record.get('type') not in ('finished', 'accepted') or not record.get('event_id'):
+    if record.get('type') not in ('finished', 'accepted', 'breaker_stop', 'breaker_reset') or not record.get('event_id'):
         raise ValueError('event needs type and event_id')
     if (isinstance(record['ts'], bool) or not isinstance(record['ts'], (float, int))
             or not math.isfinite(record['ts'])):
         raise ValueError('invalid timestamp')
     if not isinstance(record.get('task_id'), str) or not record['task_id']:
         raise ValueError('missing task_id')
+    if record['type'] in ('breaker_stop', 'breaker_reset'):
+        if not isinstance(record.get('reason'), str) or not record['reason'].strip():
+            raise ValueError('missing reason')
+        if not record.get('by'):
+            raise ValueError('missing actor')
     if record['type'] == 'finished':
         for field in ('profile', 'model', 'provider', 'card_id', 'task_id'):
             if not isinstance(record.get(field), str) or not record[field]:

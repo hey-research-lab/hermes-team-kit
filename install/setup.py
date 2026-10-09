@@ -71,7 +71,7 @@ def main():
             settings['custom_providers'].append({'name': 'fallback', 'base_url': fallback['base_url'],
                                                 'key_env': fallback['api_key_env'], 'model': fallback['model']})
             settings['fallback_model'] = {'provider': 'fallback', 'model': fallback['model']}
-        seed(profile / 'SOUL.md', template.read_text())
+        seed(profile / 'SOUL.md', template.read_text().replace('{{KIT_ROOT}}', str(ROOT)).replace('{{TEAM_CONFIG}}', str(config_file)))
         managed_seed(profile / 'config.yaml', json.dumps(settings, indent=2) + '\n')
         # Only model credentials enter profiles; no bot token or owner IDs.
         env_names = {provider['api_key_env']}

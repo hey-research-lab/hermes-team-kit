@@ -156,6 +156,27 @@ class GateTest(unittest.TestCase):
         return gate.Gate(self.gate_dir, self.out_dir, owners, self.api, self.log, now=self.clock, own_uid=-1,
                          guests=guests, deny_words=deny_words)
 
+    def test_breaker_owner_private_chat_and_reason(self):
+        from breaker import evaluate
+        from ledger import events
+        config = self.g.breaker_config
+        def message(fid, text, chat_type='private', cid=None):
+            self.g.handle_update({'message': {'from': {'id': fid},
+                'chat': {'id': fid if cid is None else cid, 'type': chat_type}, 'text': text}})
+        message(OWNER, '/stop review tools')
+        self.assertTrue(evaluate(config, T0)['tripped'])
+        message(GUEST, '/reset bypass')
+        message(STRANGER, '/reset bypass')
+        message(OWNER, '/reset bypass', 'group', -123)
+        message(OWNER, '/resume')
+        message(OWNER, '/reset')
+        self.assertTrue(evaluate(config, T0 + 86400)['tripped'])
+        message(OWNER, '/reset tools reviewed')
+        self.assertFalse(evaluate(config, T0)['tripped'])
+        self.assertEqual([r['reason'] for r in events(config['paths']['ledger'])],
+                         ['review tools', 'tools reviewed'])
+        self.assertEqual(self.g.command('reset bypass', STRANGER), 'owner only')
+
     def propose(self, slug="hello-gate", file_slug=None, **over):
         p = {"slug": slug, "title": "test proposal", "kind": "other",
              "summary": "test: reply ok %s <nonce> to approve, nothing happens" % slug,

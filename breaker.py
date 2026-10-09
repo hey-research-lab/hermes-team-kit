@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Daily budget breaker: usage adapter or completion ledger; UTC reset."""
+"""Manual desk stop, rolling hourly ledger cap and daily key budgets."""
+import argparse
+from contextlib import contextmanager
+import fcntl
+import secrets
+import tempfile
 from datetime import datetime, timedelta, timezone
 import json
 import math
@@ -8,7 +13,48 @@ from pathlib import Path
 import time
 import urllib.request
 from kit_config import load
-from ledger import events
+from ledger import events, append
+
+
+@contextmanager
+def control_lock(config):
+    """Serialize stop/reset with the final dispatch check and launch."""
+    path = Path(config['paths']['ledger']).with_suffix('.breaker.lock')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a') as stream:
+        path.chmod(0o600)
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        yield
+
+
+def manual_state(rows):
+    state = None
+    for row in rows:
+        if row.get('type') == 'breaker_stop':
+            state = row
+        elif row.get('type') == 'breaker_reset':
+            state = None
+    return state
+
+
+def trip(config, profile, reason, now=None, owner=False):
+    roles = {p.stem for p in (Path(__file__).parent / 'profiles').glob('*.md')}
+    if owner:
+        if profile not in config.get('telegram', {}).get('owner_ids', []):
+            raise PermissionError('owner only')
+    elif profile not in roles:
+        raise PermissionError('unknown desk profile')
+    with control_lock(config):
+        append(config['paths']['ledger'], {'type': 'breaker_stop', 'event_id': secrets.token_hex(16),
+               'task_id': 'breaker', 'by': profile, 'reason': reason, 'ts': time.time() if now is None else now})
+
+
+def reset_manual(config, owner_id, reason, now=None):
+    if owner_id not in config.get('telegram', {}).get('owner_ids', []):
+        raise PermissionError('owner only')
+    with control_lock(config):
+        append(config['paths']['ledger'], {'type': 'breaker_reset', 'event_id': secrets.token_hex(16),
+               'task_id': 'breaker', 'by': owner_id, 'reason': reason, 'ts': time.time() if now is None else now})
 
 
 def numeric(value):
@@ -45,6 +91,13 @@ def evaluate(config, now=None, fetch=remote_usage):
         raise ValueError('breaker_threshold must be in (0, 1]')
     start, reset = window(now, limits.get('reset_hour_utc', 0))
     rows = list(events(config['paths']['ledger']))
+    manual = manual_state(rows)
+    hourly_cap = numeric(limits.get('hourly_usd', 0))
+    recent = [r for r in rows if r.get('type') == 'finished' and now - 3600 < r['ts'] <= now]
+    hourly_spend = sum(numeric(r['dollars']) for r in recent if r.get('dollars') is not None)
+    hourly_unknown = any(r.get('dollars') is None for r in recent)
+    hourly_paused = hourly_cap > 0 and (hourly_unknown or hourly_spend >= hourly_cap)
+    reason = 'manual stop' if manual else 'hourly cap' if hourly_paused else None
     groups = {}
     for name, seat in config.get('seats', {}).items():
         provider = {**config.get('provider', {}), **seat}
@@ -69,11 +122,14 @@ def evaluate(config, now=None, fetch=remote_usage):
             except (OSError, ValueError, KeyError, TypeError):
                 source = 'ledger-fallback'
         cap = numeric(cap) if cap is not None else None
-        paused = cap is not None and (unknown or spend >= threshold * cap)
+        daily_paused = cap is not None and (unknown or spend >= threshold * cap)
+        paused = bool(manual or hourly_paused or daily_paused)
         groups[name] = {'profiles': seat['profiles'], 'daily_cap_usd': cap, 'spent_usd': spend,
                         'remaining_usd': None if cap is None else max(0, cap * threshold - spend),
-                        'paused': paused, 'unknown_cost': unknown, 'reset_at': group_reset, 'source': source}
-    return {'ts': now, 'groups': groups}
+                        'paused': paused, 'reason': reason or ('daily cap' if daily_paused else None), 'unknown_cost': unknown, 'reset_at': group_reset, 'source': source}
+    return {'ts': now, 'groups': groups, 'tripped': bool(manual or hourly_paused),
+            'reason': reason, 'manual': manual, 'hourly_usd': hourly_cap,
+            'hourly_spent_usd': hourly_spend, 'hourly_unknown_cost': hourly_unknown}
 
 
 def enforce(snapshot, command, state_path):
@@ -84,11 +140,11 @@ def enforce(snapshot, command, state_path):
     cards = json.loads(command("list", "--json"))
     for card in cards:
         cid, profile = card["id"], card.get("assignee")
-        if profile in paused and card["status"] == "ready":
+        if (snapshot.get("tripped") or profile in paused) and card["status"] == "ready":
             held[cid] = profile
             state_path.write_text(json.dumps(held))  # Intent survives a crash after scheduling.
-            command("schedule", cid, "daily key budget breaker")
-        elif cid in held and profile not in paused:
+            command("schedule", cid, snapshot.get("reason") or "daily key budget breaker")
+        elif cid in held and not snapshot.get("tripped") and profile not in paused:
             if card["status"] == "scheduled":
                 command("unblock", cid)
             del held[cid]
@@ -100,15 +156,28 @@ def update(config, now=None, fetch=remote_usage):
     snapshot = evaluate(config, now, fetch)
     out = Path(config['paths']['out'])
     out.mkdir(parents=True, exist_ok=True)
-    temporary = out / 'breaker.json.tmp'
-    temporary.write_text(json.dumps(snapshot, allow_nan=False))
-    temporary.chmod(0o600)
-    temporary.replace(out / 'breaker.json')
+    with tempfile.NamedTemporaryFile(mode='w', dir=out, prefix='breaker-', delete=False) as stream:
+        temporary = Path(stream.name)
+        stream.write(json.dumps(snapshot, allow_nan=False))
+    try:
+        temporary.replace(out / 'breaker.json')
+    finally:
+        temporary.unlink(missing_ok=True)
     return snapshot
 
 
 def main():
-    print(json.dumps(update(load()), indent=2))
+    parser = argparse.ArgumentParser(description='Inspect the breaker or stop the desk. Reset is owner-only in Telegram.')
+    parser.add_argument('command', choices=['status', 'stop'], nargs='?', default='status')
+    parser.add_argument('--profile')
+    parser.add_argument('--reason')
+    args = parser.parse_args()
+    config = load()
+    if args.command == 'stop':
+        if not args.profile or not args.reason:
+            parser.error('stop needs --profile and --reason')
+        trip(config, args.profile, args.reason)
+    print(json.dumps(update(config), indent=2))
 
 if __name__ == '__main__':
     main()

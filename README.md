@@ -104,6 +104,41 @@ files. The sample file documents paths, limits, seat groups and locale settings.
 | A capped seat key | The same seat-group configuration; no special provider required. |
 | A second compatible provider | Fill the optional `fallback` section; profile configs use Hermes' fallback model support. |
 
+## Stopping the desk and hourly spend
+
+Any installed desk profile can stop new work with a reason:
+
+```sh
+python3 breaker.py stop --profile builder --reason "unexpected tool behavior"
+```
+
+The owner can send `/stop <reason>` (or `stop <reason>`) to the Telegram gate.
+Only an owner in a private owner chat can send `/reset <reason>` (or
+`reset <reason>`). Both actions append their actor, reason and timestamp to
+`paths.ledger`; a manual stop persists across restarts and daily resets.
+`/resume` only clears the older pause flag, never the manual breaker stop.
+Fresh profile templates include the stop command with absolute paths filled by
+the installer. Existing customized profiles are preserved; add that command
+to their instructions yourself when updating an existing desk.
+Ready cards are parked; running cards may finish. Reset releases only cards
+parked by the breaker and still respects budget caps. The default same-user
+trust model applies: profile names identify actors, not OS-isolated identities.
+
+Set `limits.hourly_usd` to a positive dollar amount to cap the whole desk's
+completion spend over a rolling 60-minute window. The default `0` disables it.
+The window uses ledger timestamps, including all groups and providers, even
+when a daily usage endpoint is configured. At or above the limit the breaker
+trips with reason `hourly cap`; unknown completion costs also block while in
+the window. It resets automatically on the next dispatch check when the
+window drops below the cap. A simultaneous manual stop still needs an owner
+reset. Daily group limits continue to apply separately.
+
+These limits stop new tasks, not calls inside running tasks. Completion costs
+arrive after a run; use provider-side limits for a hard spending ceiling.
+Use the kit dispatcher exclusively on its dedicated board. The final breaker
+check and launch share a lock with stop/reset, so a stop acknowledged before
+that check prevents a new launch.
+
 ## Security
 
 The services run as your non-root account. The default single-user mode trusts

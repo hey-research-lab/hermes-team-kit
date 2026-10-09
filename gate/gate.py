@@ -28,6 +28,7 @@ from datetime import datetime, timedelta, timezone
 
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from breaker import trip, reset_manual
 from kit_config import load
 CONFIG = load()
 PATHS = CONFIG.get("paths", {})
@@ -1386,7 +1387,7 @@ class Telegram:
 
 class Gate:
     def __init__(self, gate_dir, out_dir, owners, api, log, now=time.time, own_uid=None,
-                 guests=(), deny_words=()):
+                 guests=(), deny_words=(), breaker_config=None):
         self.gate_dir = gate_dir
         self.out_dir = out_dir
         self.proposals_dir = os.path.join(out_dir, "proposals")
@@ -1396,6 +1397,10 @@ class Gate:
         self.state_path = os.path.join(gate_dir, "state.json")
         self.tasks_dir = os.path.join(gate_dir, "tasks")
         self.task_states_dir = os.path.join(out_dir, "tasks")
+        self.breaker_config = breaker_config if breaker_config is not None else {
+            **CONFIG, 'paths': {**CONFIG.get('paths', {}),
+            'ledger': CONFIG.get('paths', {}).get('ledger', os.path.join(out_dir, 'ledger.jsonl'))},
+            'telegram': {**CONFIG.get('telegram', {}), 'owner_ids': list(owners)}}
         self.owners = list(owners)
         self.guests = [g for g in guests if g not in self.owners]
         words = [re.escape(w.strip()) for w in deny_words if w.strip()]
@@ -1999,6 +2004,8 @@ class Gate:
 
     def command(self, text, owner_id):
         head = text.strip().split(None, 1)
+        if head and head[0].lower() in ('stop', 'reset'):
+            return self.breaker_command(head[0].lower(), head[1] if len(head) > 1 else '', owner_id)
         if head and head[0].lower() == "task":
             return self.add_task(head[1] if len(head) > 1 else "", owner_id)
         parts = text.strip().lower().split()
@@ -2021,6 +2028,17 @@ class Gate:
         if cmd == "resume" and not args:
             return "resumed" if self.set_resume(owner_id) else "not paused"
         return HELP
+
+    def breaker_command(self, action, reason, owner_id):
+        if owner_id not in self.owners:
+            return 'owner only'
+        if not reason.strip():
+            return action + ' needs a reason'
+        if action == 'stop':
+            trip(self.breaker_config, owner_id, reason, self.now(), owner=True)
+            return 'Desk stopped. Running tasks may finish. Reason: ' + reason
+        reset_manual(self.breaker_config, owner_id, reason, self.now())
+        return 'Manual stop reset. Budget caps still apply. Reason: ' + reason
 
     def paused(self):
         return os.path.exists(self.pause_path)
@@ -2149,6 +2167,8 @@ class Gate:
             self._say(uid, "owner", reply)
 
     def owner_menu(self, uid, key, rest=""):
+        if key in ('/stop', '/reset'):
+            return self._say(uid, 'owner', self.breaker_command(key[1:], rest, uid))
         if key in ("/start",):
             return self.start(uid, "owner")
         if key in ("help", "/help"):

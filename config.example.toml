@@ -23,6 +23,8 @@ tasks_per_day = 100
 guest_refs_per_day = 5
 guest_deep_per_day = 3
 breaker_threshold = 0.8
+# Desk-wide rolling 60-minute completion spend, 0 disables the hourly cap.
+hourly_usd = 0
 reset_hour_utc = 0
 
 [provider]

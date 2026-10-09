@@ -53,7 +53,7 @@ PATHS = CONFIG.get("paths", {})
 LOCAL_VAR = Path(__file__).resolve().parents[1] / "var"
 
 from ledger import finished, append as ledger_append
-from breaker import update as breaker_update, enforce as breaker_enforce
+from breaker import update as breaker_update, enforce as breaker_enforce, control_lock
 LOCALE = os.environ.get("TEAM_LOCALE", CONFIG.get("telegram", {}).get("locale", "en"))
 
 GATE_DIR = os.environ.get("TAKE_GATE_DIR", PATHS.get("gate", str(LOCAL_VAR / "gate")))
@@ -749,6 +749,8 @@ def main():
             state = None
         try:
             if state is None:
+                if CONFIG.get('paths', {}).get('ledger') and breaker_update(CONFIG).get('tripped'):
+                    raise BudgetPaused('desk breaker tripped')
                 take(read_task(name))
             elif state in ("taken", "blocked"):
                 sync(tid, state)
@@ -778,9 +780,12 @@ def main():
         log("relegacy error %s: %s" % (type(e).__name__, str(e)[:300]))
         rc = 1
     try:
-        rebalance(BAL)
-        if "seats" in CONFIG:
-            breaker_enforce(breaker_update(CONFIG), hermes, os.path.join(OUT_ROOT, "breaker-held.json"))
+        if CONFIG.get("paths", {}).get("ledger"):
+            with control_lock(CONFIG):
+                rebalance(BAL)
+                breaker_enforce(breaker_update(CONFIG), hermes, os.path.join(OUT_ROOT, "breaker-held.json"))
+        else:
+            rebalance(BAL)
     except Exception as e:
         log("rebalance error %s: %s" % (type(e).__name__, str(e)[:300]))
         rc = 1
