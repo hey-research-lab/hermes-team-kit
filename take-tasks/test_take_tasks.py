@@ -105,6 +105,12 @@ class SeatsTest(unittest.TestCase):
         self.assertIn(("comment", "t_a", "переназначено: место 2 пустое", "--author", "take-tasks"), self.calls)
         self.assertTrue(any("t_a seat 2 empty: analyst -> tester" in m for m in self.logs))
 
+    def test_english_rebalance_comment(self):
+        self.tt.LOCALE = "en"
+        self.card("t_a", "analyst")
+        self.tt.rebalance(self.tt.seats(NOW), NOW)
+        self.assertIn(("comment", "t_a", "reassigned: seat 2 empty", "--author", "take-tasks"), self.calls)
+
     def test_empty_seat_card_moves_and_keeps_kind(self):
         self.card("t_j", "judge")                        # B empty: judge -> writer, analyst
         self.card("t_r", "writer", [self.walled("judge"), {"profile": "writer", "outcome": "rate_limited",

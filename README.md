@@ -1,24 +1,39 @@
-Authorship: Hermes team kit contributors.
+# Hermes team kit
 
-# Hermes team gate and ledger
+A Telegram gate, task router, ledger and budget breaker for a team of Hermes agents.
 
-One Telegram bot gives an owner a queue of proposals and agent reports, with
-**ok / no / hold** decisions protected by single-use nonces. The gate makes no
-model calls. A local ledger records completed work and reports the dollars spent
-per accepted task per profile. A dispatcher turns owner messages into Hermes
-kanban cards, routes them by role, and respects a daily budget breaker.
+![A hundred hands, some of them steel, one on the rope](docs/img/hero.png)
 
-Python 3.11+ and the standard library are sufficient for the kit. Use an existing
-Hermes installation with profiles and the kanban `create`, `show`, `list`,
-`reassign`, `schedule`, `unblock` and `dispatch` commands. Install Hermes separately
-from a source you trust; this installer downloads nothing.
+[![CI](https://github.com/qvotvm/hermes-team-kit/actions/workflows/tests.yml/badge.svg)](https://github.com/qvotvm/hermes-team-kit/actions/workflows/tests.yml)
 
-| Key option | Configuration |
-| --- | --- |
-| Any OpenAI-compatible key | Set `provider.base_url`, `model`, and `api_key_env`; remove the seat sections if uncapped. |
-| A key with a daily dollar cap | Put every profile sharing that key in one seat group and set `daily_cap_usd`. |
-| A capped seat key | The same seat-group configuration; no special provider required. |
-| A second compatible provider | Fill the optional `fallback` section; profile configs use Hermes' fallback model support. |
+- Review proposals and agent reports in Telegram with **ok / no / hold** decisions protected by single-use nonces. The gate makes no model calls.
+- Route owner messages into Hermes kanban cards for ten role profiles, then receive their handoff reports for review.
+- Record completed work in a local ledger, report dollars spent per accepted task per profile, and defer dispatch near a shared key's daily cap.
+
+
+## How it works
+
+```mermaid
+flowchart TD
+    owner[Owner] --> gate["Telegram gate: ok / no / hold, single-use nonces"]
+    gate --> dispatcher[Dispatcher]
+    dispatcher --> cards[Hermes kanban cards]
+    cards --> profiles["Profiles: scoutx, scoutweb, research1-3, analyst, judge, writer, builder, tester"]
+    profiles --> handoff[handoff.md]
+    handoff --> report[Report back to gate]
+    report --> ledger[Ledger]
+    cap[Shared key daily cap and usage] --> breaker[Budget breaker]
+    ledger --> breaker
+    breaker -->|defer tasks and park ready cards| dispatcher
+```
+
+The owner reviews the returned report. **ok** marks a task accepted for accounting.
+The breaker does not interrupt running cards; use a provider-side cap for a hard
+spending limit. See [operation and accounting](docs/OPERATION.md) for the full
+command list, cost semantics, guest access, locale support and fallback behavior.
+
+![The desk in Telegram: a proposal with ok / no / hold, then the agent's report](docs/img/telegram-desk.png)
+
 
 ## Quickstart
 
@@ -66,57 +81,37 @@ On Debian 12+ or Ubuntu 24.04+, as the non-root user that owns your Hermes insta
    paths, adjust `ReadWritePaths` in the gate unit before starting it. Inspect
    `journalctl -u team-gate -u team-tasks` if a task stays queued.
 
+## Requirements
+
+Python 3.11+ and the standard library are sufficient for the kit. Use an existing
+Hermes installation with profiles and the kanban `create`, `show`, `list`,
+`reassign`, `schedule`, `unblock` and `dispatch` commands. Install Hermes separately
+from a source you trust; this installer downloads nothing.
+
+The documented systemd setup targets Debian 12+ or Ubuntu 24.04+. Run the kit
+as the non-root account that owns Hermes. Live use needs a Telegram bot token,
+your owner ID, and credentials for an OpenAI-compatible model provider.
+
+## Configuration
+
+Edit `config.toml` and keep credentials in `service.env` or the profile `.env`
+files. The sample file documents paths, limits, seat groups and locale settings.
+
+| Key option | Configuration |
+| --- | --- |
+| Any OpenAI-compatible key | Set `provider.base_url`, `model`, and `api_key_env`; remove the seat sections if uncapped. |
+| A key with a daily dollar cap | Put every profile sharing that key in one seat group and set `daily_cap_usd`. |
+| A capped seat key | The same seat-group configuration; no special provider required. |
+| A second compatible provider | Fill the optional `fallback` section; profile configs use Hermes' fallback model support. |
+
+## Security
+
 The services run as your non-root account. The default single-user mode trusts
 that account and its agents with the bot credentials and decision state; this
-is a convenience deployment, not OS isolation. See the
+is a convenience deployment, not OS isolation. Read the
 [threat model](docs/THREAT-MODEL.md) before allowing untrusted agents or guests.
 No model, publication, release or remote action happens during installation.
-
-## Operation and accounting
-
-Use `/pending`, `/tasks`, `/status`, `/task`, `/pause`, `/resume` and `/help`, or the
-persistent keyboard. Reports being deepened leave review until a child report
-arrives. A report's **ok** marks the task accepted for accounting; it does not
-publish anything. `/pause` stops dispatch; already running cards finish.
-
-```sh
-python3 ledger.py report --days 7
-python3 breaker.py
-```
-
-The append-only JSONL ledger stores task/card identifiers, profile, model,
-provider, tokens, dollars and duration. Unknown values remain `null` or `unknown`.
-Accepted tasks are distinct task IDs, counted per profile over the same period
-as spend; the numerator includes all finished work in that period, including
-rejected work. A profile with missing cost information has an unknown rate.
-
-Hermes run `metadata` may supply `cost_usd`, `tokens`, `model`, `provider` and
-`duration`; these fields can also be top-level run fields. The kit records all
-ended runs on a completed task. If your Hermes version omits usage, supply
-completion events through `ledger.py append` from your accounting integration.
-Use stable event IDs to avoid duplicates. No model call is made to estimate cost.
-
-The breaker uses a configured HTTPS usage URL when available. Its adapter expects
-`daily_cap_usd`, `spent_usd` and an ISO timestamp `reset_at`; map a provider's own
-schema to this contract if necessary. Otherwise it sums local ledger spending
-since `reset_hour_utc`. At 80% it defers new tasks and parks ready cards for that
-group, releasing only cards it parked after reset. It never interrupts a running
-card. Unknown local costs pause a capped group until accurate accounting is
-available or the daily window resets. Uncapped keys need no usage endpoint.
-The optional status **key balance** is the total remaining dispatch allowance
-up to the breaker threshold, from a snapshot no older than ten minutes.
-
-Do not run another dispatcher on the same board: it can bypass the timer's
-breaker enforcement. This is a cooperative scheduling guard; a provider-side
-cap is needed for a hard spending limit. Native fallback is configured in
-Hermes profiles; budget exhaustion normally routes to an available group's
-profile, while provider failures can use the profile's secondary provider.
-
-Guests have a generic `ref https://example.com/article [note]` command, their
-own report history and an optional deeper pass. Private/local URLs are refused;
-retrieved content remains untrusted. Guest reports contain only handoff sections,
-not raw run summaries or artifact paths. UI and handoff language default to
-English; set `telegram.locale = "ru"` to use the preserved Russian UI.
+See [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
 ## Verification
 
@@ -135,6 +130,18 @@ network. Run `sh tests/smoke/vm.sh` inside a fresh VM as its non-root user; set
 Live Telegram/model execution and VM service setup require your own environment.
 CI runs the suites and local smoke test on each push and pull request.
 
-`gate/` holds the single-file gate, `take-tasks/` the dispatcher, `profiles/`
-the role templates, `install/` the installer and units, `docs/` the operational
-notes, and `tests/` the checks. Nothing is published by this repository.
+## Layout
+
+| Path | Contents |
+| --- | --- |
+| `gate/` | Single-file Telegram gate |
+| `take-tasks/` | Task dispatcher |
+| `profiles/` | Ten role templates |
+| `install/` | Installer, integrity hashes and systemd units |
+| `docs/` | Operation, threat model and image placeholders |
+| `tests/` | Unit checks and local/VM smoke tests |
+| `dash/` | Optional dashboard access notes |
+| `ledger.py`, `breaker.py`, `kit_config.py` | Accounting, budget control and shared configuration |
+
+Nothing is published by this repository. Contributions follow
+[CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [MIT](LICENSE).

@@ -54,7 +54,7 @@ LOCALES = {'en': {'\n\nуглуби: ': '\n\ndeepen: ',
         '<b>🗂 задачи</b>': '<b>🗂 tasks</b>',
         '<b>🗞 плановые отчёты: %d</b>': '<b>🗞 scheduled reports: %d</b>',
         '<i>обновлено %s</i>': '<i>updated %s</i>',
-        'A chip under ➕ задача: the next text goes to that profile. A chip on an old message opens a new mode.': 'A '
+        'A chip under the new task button: the next text goes to that profile. A chip on an old message opens a new mode.': 'A '
                                                                                                                  'chip '
                                                                                                                  'under '
                                                                                                                  '➕ '
@@ -76,7 +76,7 @@ LOCALES = {'en': {'\n\nуглуби: ': '\n\ndeepen: ',
                                                                                                                  'a '
                                                                                                                  'new '
                                                                                                                  'mode.',
-        'Under a report sent on its own: 🔎 deeper (a done owner task) and след ▶, the next undecided item.': 'Under '
+        'Under a report sent on its own: 🔎 deeper (a done owner task) and next, the next undecided item.': 'Under '
                                                                                                              'a '
                                                                                                              'report '
                                                                                                              'sent '
@@ -442,7 +442,7 @@ LOCALES = {'en': {'\n\nуглуби: ': '\n\ndeepen: ',
         '<b>🗂 задачи</b>': '<b>🗂 задачи</b>',
         '<b>🗞 плановые отчёты: %d</b>': '<b>🗞 плановые отчёты: %d</b>',
         '<i>обновлено %s</i>': '<i>обновлено %s</i>',
-        'A chip under ➕ задача: the next text goes to that profile. A chip on an old message opens a new mode.': 'A '
+        'A chip under the new task button: the next text goes to that profile. A chip on an old message opens a new mode.': 'A '
                                                                                                                  'chip '
                                                                                                                  'under '
                                                                                                                  '➕ '
@@ -464,7 +464,7 @@ LOCALES = {'en': {'\n\nуглуби: ': '\n\ndeepen: ',
                                                                                                                  'a '
                                                                                                                  'new '
                                                                                                                  'mode.',
-        'Under a report sent on its own: 🔎 deeper (a done owner task) and след ▶, the next undecided item.': 'Under '
+        'Under a report sent on its own: 🔎 deeper (a done owner task) and next, the next undecided item.': 'Under '
                                                                                                              'a '
                                                                                                              'report '
                                                                                                              'sent '
@@ -929,7 +929,7 @@ DIGEST_UTC = ((2, 30), (10, 30))     # scheduled scans' reports in one list, 02:
 NOTE_WINDOW = 120      # a report within 2 min of the last 📥 line goes into that line
 NOTE_MAX = 5
 ALERT_CHECK = 600
-# ➕ задача chips: key, label, profile, text put before the task
+# New task chips: key, label, profile, text put before the task
 TASK_TPL = (("res", tr('🔎 ресёрч'), "research1", ""), ("x", tr('🐦 X и реплаи'), "scoutx", ""),
             ("vid", tr('🎬 разбор видео'), "analyst", tr('разбор видео: ')), ("txt", tr('✍️ текст'), "writer", ""), ("code", tr('🛠 код'), "builder", ""))
 # no quotes, backslash, $, `, ;, (), <>, | or spaces: links end up near shell commands
@@ -1763,7 +1763,7 @@ class Gate:
         return [(tr('🔎 глубже %d/%d') % (self._depth(task) + 1, MAX_DEPTH), "deep|" + tid)]
 
     def _report_rows(self, slug, deep=True):
-        """Under a report sent on its own: 🔎 deeper (a done owner task) and след ▶, the next undecided item."""
+        """Under a report sent on its own: 🔎 deeper (a done owner task) and next, the next undecided item."""
         if not REPORT_RE.match(slug):
             return None
         return [((self._deep_row(slug) if deep else None) or []) + [(tr('след ▶'), "v:nx:" + h8(slug))]]
@@ -2108,7 +2108,7 @@ class Gate:
         return [chips[i:i + 2] for i in range(0, len(chips), 2)] + [CANCEL_ROW]
 
     def _pick_tpl(self, uid, key, mid):
-        """A chip under ➕ задача: the next text goes to that profile. A chip on an old message opens a new mode."""
+        """A chip under the new task button: the next text goes to that profile. A chip on an old message opens a new mode."""
         t = next((x for x in TASK_TPL if x[0] == key), None)
         if t is None:
             return None
@@ -2278,7 +2278,7 @@ class Gate:
             rev = self._ui(uid).get("rev")
             keep = rev if rev and mid and rev > mid else None
             return self.review(uid, self._rev_open(data[4:]), keep, fresh=keep is None)
-        if data.startswith("v:nx:"):        # след ▶ under a report: the next undecided item
+        if data.startswith("v:nx:"):        # Next under a report: the next undecided item
             slug = self._rev_any(data[5:])
             nxt = self._rev_after(slug) if slug else None
             if nxt is None and slug and self.state["proposals"][slug]["status"] == "sent":
@@ -2783,7 +2783,7 @@ class Gate:
                 and r["status"] == "delivered" and not any(x.get("parent") == r["id"] for x in refs)]
 
     def guest_deepen(self, guest_id, tid):
-        """🔎 глубже: a second pass on the guest's own delivered ref, depth 2 at most, its own daily cap."""
+        """Deeper: a second pass on the guest's own delivered ref, depth 2 at most, its own daily cap."""
         c = guest_cmd("deep")
         ref = next((r for r in self.state["refs"] if r["id"] == tid and r["from"] == guest_id), None) if c else None
         if ref is None:

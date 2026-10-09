@@ -476,7 +476,7 @@ def rebalance(bal, now=None):
         n = SEAT_GROUPS[SEAT_OF[p]][0]
         hermes("reassign", cid, to, "--reason", "seat %d empty" % n)
         try:
-            hermes("comment", cid, "переназначено: место %d пустое" % n, "--author", "take-tasks")
+            hermes("comment", cid, ("переназначено: место %d пустое" if LOCALE == "ru" else "reassigned: seat %d empty") % n, "--author", "take-tasks")
         except RuntimeError as e:
             log("card %s comment error: %s" % (cid, str(e)[:200]))
         log("card %s seat %d empty: %s -> %s (seat %d $%.2f)"
